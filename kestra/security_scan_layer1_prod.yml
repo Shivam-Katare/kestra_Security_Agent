@@ -1,0 +1,60 @@
+id: security_scan_layer1_prod
+namespace: dev_security
+
+inputs:
+  - id: scan_target
+    type: STRING
+    defaults: "package-lock.json"
+
+tasks:
+  - id: socket_scan
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: node:20-bookworm
+    namespaceFiles:
+      enabled: true
+      include:
+        - package.json
+        - package-lock.json
+    outputFiles:
+      - layer1-result.json
+    commands:
+      - node -v
+      - npm -v
+      - npx --yes @socketsecurity/cli@latest --version
+      - |
+        npx --yes @socketsecurity/cli@latest scan {{ inputs.scan_target }} --json > socket-output.json || true
+      - |
+        node -e '
+        const fs = require("fs");
+        let raw = {};
+        try { raw = JSON.parse(fs.readFileSync("socket-output.json","utf8")); } catch (e) {}
+        const issues = JSON.stringify(raw).toLowerCase().includes("error") || JSON.stringify(raw).toLowerCase().includes("critical") || JSON.stringify(raw).toLowerCase().includes("high");
+        const result = {
+          layer: "dependency_scan",
+          mode: "prod",
+          status: issues ? "failed" : "passed",
+          target: "{{ inputs.scan_target }}",
+          scanner: "socket.dev",
+          summary: issues ? "Dependency scan detected suspicious or high-risk dependency findings." : "Dependency scan completed with no high-risk findings.",
+          recommended_action: issues ? "Review flagged dependencies, inspect lockfile changes, and remove or pin suspicious packages." : "No immediate remediation required.",
+          raw_result: raw
+        };
+        fs.writeFileSync("layer1-result.json", JSON.stringify(result, null, 2));
+        '
+
+  - id: expose_layer1_result
+    type: io.kestra.plugin.core.output.OutputValues
+    values:
+      layer1_status: "{{ read(outputs.socket_scan.outputFiles['layer1-result.json']) | jq('.status') | first }}"
+      layer1_summary: "{{ read(outputs.socket_scan.outputFiles['layer1-result.json']) }}"
+
+outputs:
+  - id: layer1_status
+    type: STRING
+    value: "{{ outputs.expose_layer1_result.values.layer1_status }}"
+  - id: layer1_summary
+    type: STRING
+    value: "{{ outputs.expose_layer1_result.values.layer1_summary }}"

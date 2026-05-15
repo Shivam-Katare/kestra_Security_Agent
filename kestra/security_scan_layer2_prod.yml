@@ -1,0 +1,100 @@
+id: security_scan_layer2_prod
+namespace: dev_security
+
+inputs:
+  - id: site_url
+    type: STRING
+    required: true
+
+tasks:
+  - id: runtime_scan
+    type: io.kestra.plugin.scripts.node.Script
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: IF_NOT_PRESENT
+    containerImage: mcr.microsoft.com/playwright:v1.52.0-noble
+    outputFiles:
+      - layer2-result.json
+    script: |
+      const fs = require("fs");
+      const { chromium } = require("playwright");
+
+      const siteUrl = "{{ inputs.site_url }}";
+      const siteHost = new URL(siteUrl).hostname;
+
+      const allowedDomains = new Set([
+        siteHost,
+        "fonts.googleapis.com",
+        "fonts.gstatic.com",
+        "www.googletagmanager.com",
+        "www.google-analytics.com",
+        "vercel.live",
+        "vitals.vercel-insights.com"
+      ]);
+
+      (async () => {
+        const browser = await chromium.launch({ headless: true });
+        const page = await browser.newPage();
+
+        const seenDomains = new Set();
+        const unexpectedDomains = new Set();
+
+        page.on("request", request => {
+          try {
+            const host = new URL(request.url()).hostname;
+            seenDomains.add(host);
+            if (!allowedDomains.has(host)) {
+              unexpectedDomains.add(host);
+            }
+          } catch (_) {}
+        });
+
+        await page.goto(siteUrl, { waitUntil: "networkidle", timeout: 90000 });
+        await page.waitForTimeout(5000);
+        await browser.close();
+
+        const result = {
+          layer: "runtime_check",
+          mode: "prod",
+          status: unexpectedDomains.size > 0 ? "failed" : "passed",
+          site_url: siteUrl,
+          seen_domains: Array.from(seenDomains),
+          unexpected_domains: Array.from(unexpectedDomains),
+          summary: unexpectedDomains.size > 0
+            ? "Unexpected outbound domains detected during browser runtime monitoring."
+            : "No unexpected outbound domains detected during browser runtime monitoring.",
+          recommended_action: unexpectedDomains.size > 0
+            ? "Review third-party scripts and remove unapproved outbound requests."
+            : "No immediate remediation required."
+        };
+
+        fs.writeFileSync("layer2-result.json", JSON.stringify(result, null, 2));
+      })().catch(err => {
+        const result = {
+          layer: "runtime_check",
+          mode: "prod",
+          status: "failed",
+          site_url: siteUrl,
+          seen_domains: [],
+          unexpected_domains: [],
+          summary: "Runtime scan failed before completion.",
+          recommended_action: "Inspect runtime scanner logs and browser startup/network behavior.",
+          error: String(err.message || err)
+        };
+        fs.writeFileSync("layer2-result.json", JSON.stringify(result, null, 2));
+        process.exit(0);
+      });
+
+  - id: expose_layer2_result
+    type: io.kestra.plugin.core.output.OutputValues
+    values:
+      layer2_status: "{{ read(outputs.runtime_scan.outputFiles['layer2-result.json']) | jq('.status') | first }}"
+      layer2_summary: "{{ read(outputs.runtime_scan.outputFiles['layer2-result.json']) }}"
+
+outputs:
+  - id: layer2_status
+    type: STRING
+    value: "{{ outputs.expose_layer2_result.values.layer2_status }}"
+  - id: layer2_summary
+    type: STRING
+    value: "{{ outputs.expose_layer2_result.values.layer2_summary }}"

@@ -1,0 +1,70 @@
+id: upload_lockfile_prod
+namespace: dev_security
+
+inputs:
+  - id: github_repo
+    type: STRING
+    required: false
+  - id: github_branch
+    type: STRING
+    defaults: "main"
+  - id: package_json_url
+    type: STRING
+    required: false
+  - id: lockfile_url
+    type: STRING
+    required: false
+  - id: site_url
+    type: STRING
+    required: true
+
+tasks:
+  - id: save_site_url
+    type: io.kestra.plugin.core.kv.Put
+    key: security/site_url
+    value: "{{ inputs.site_url }}"
+
+  - id: save_github_repo
+    type: io.kestra.plugin.core.kv.Put
+    key: security/github_repo
+    value: "{{ inputs.github_repo ?? '' }}"
+
+  - id: save_github_branch
+    type: io.kestra.plugin.core.kv.Put
+    key: security/github_branch
+    value: "{{ inputs.github_branch }}"
+
+  - id: resolve_package_json_url
+    type: io.kestra.plugin.core.output.OutputValues
+    values:
+      package_json_url: "{{ inputs.package_json_url ? inputs.package_json_url : (inputs.github_repo ? ('https://raw.githubusercontent.com/' ~ (inputs.github_repo | replace('https://github.com/','')) ~ '/' ~ inputs.github_branch ~ '/package.json') : '') }}"
+      lockfile_url: "{{ inputs.lockfile_url ? inputs.lockfile_url : (inputs.github_repo ? ('https://raw.githubusercontent.com/' ~ (inputs.github_repo | replace('https://github.com/','')) ~ '/' ~ inputs.github_branch ~ '/package-lock.json') : '') }}"
+
+  - id: download_package_json
+    type: io.kestra.plugin.core.http.Download
+    uri: "{{ outputs.resolve_package_json_url.values.package_json_url }}"
+
+  - id: download_lockfile
+    type: io.kestra.plugin.core.http.Download
+    uri: "{{ outputs.resolve_package_json_url.values.lockfile_url }}"
+
+  - id: upload_to_namespace
+    type: io.kestra.plugin.core.namespace.UploadFiles
+    namespace: "{{ flow.namespace }}"
+    filesMap:
+      package.json: "{{ outputs.download_package_json.uri }}"
+      package-lock.json: "{{ outputs.download_lockfile.uri }}"
+
+outputs:
+  - id: package_json_url
+    type: STRING
+    value: "{{ outputs.resolve_package_json_url.values.package_json_url }}"
+  - id: lockfile_url
+    type: STRING
+    value: "{{ outputs.resolve_package_json_url.values.lockfile_url }}"
+  - id: site_url
+    type: STRING
+    value: "{{ inputs.site_url }}"
+  - id: github_repo
+    type: STRING
+    value: "{{ inputs.github_repo ?? '' }}"
