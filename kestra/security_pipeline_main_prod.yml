@@ -146,7 +146,7 @@ tasks:
     body: "{{ read(outputs.build_final_summary.outputFiles['gemini-final-prompt.json']) }}"
 
   - id: final_slack_alert
-    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+    type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
     url: "{{ secret('SLACK_WEBHOOK_URL') }}"
     messageText: "{{ outputs.gemini_final_summary.body | jq('.candidates[0].content.parts[0].text | ltrimstr(\"```json\\n\") | rtrimstr(\"\\n```\") | fromjson | .slack_text') | first }}"
 
@@ -174,10 +174,10 @@ tasks:
       {
         "alias": "{{ inputs.production_alias }}"
       }
-    disabled: "{{ outputs.decide_rollback.values.rollback_advised != 'true' }}"
+    runIf: "{{ outputs.decide_rollback.values.rollback_advised == 'true' }}"
 
   - id: notify_rollback
-    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+    type: io.kestra.plugin.slack.notifications.SlackIncomingWebhook
     url: "{{ secret('SLACK_WEBHOOK_URL') }}"
     messageText: "🚨 Security issue detected. Production alias {{ inputs.production_alias }} was reassigned to the previous safe Vercel deployment {{ outputs.decide_rollback.values.previous_ready_deployment_id }}."
-    disabled: "{{ outputs.decide_rollback.values.rollback_advised != 'true' }}"
+    runIf: "{{ outputs.decide_rollback.values.rollback_advised == 'true' }}"
