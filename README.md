@@ -36,6 +36,8 @@ The pipeline checks two major attack surfaces in a deployed frontend application
 
 After both checks complete, the main orchestration flow combines the results, sends them to Gemini for a clean security summary, posts one final alert to Slack, and can optionally trigger a rollback on Vercel.
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/500ee42f-4889-4262-8852-077b406b105d" />
+
 ## Why orchestration is needed
 
 Attackers increasingly target CI/CD and frontend delivery pipelines through:
@@ -50,6 +52,9 @@ A single scan is not enough. This project uses orchestration so both build-time 
 ## How it works
 
 This diagram shows how Kestra orchestrates triggers, scans, summary generation, Slack alerting, and rollback.
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/683bf19f-ff2f-45eb-aadc-011e84eb7c8d" />
+
 
 ## Project structure
 
@@ -105,6 +110,8 @@ It:
 - checks Vercel deployment status
 - optionally rolls back to the previous safe deployment
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/3b29cfc7-a5a3-48ff-b99f-8a0bab0c05e2" />
+
 ## Trigger modes
 
 This setup supports two trigger modes:
@@ -114,6 +121,9 @@ This setup supports two trigger modes:
 
 2. **Webhook trigger**  
    Runs when called by GitHub Actions, Vercel webhooks, or any CI/CD workflow after merge or deploy.
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/38ab5d64-de4a-4c0c-a9db-948ea4b3ed4b" />
+
 
 ## Runtime state
 
@@ -127,13 +137,17 @@ This allows the pipeline to reuse the latest known app configuration between exe
 
 ## Vercel rollback
 
-If the final security summary determines that the deployment is unsafe and rollback is advised, the pipeline can:
+If the final security summary determines that the deployment is unsafe and rollback is advised, the pipeline can automatically recover the production deployment.
+
+This is implemented using the **Vercel REST API** together with Kestra’s **HTTP Request** tasks.
+
+The rollback flow can:
 
 1. fetch recent Vercel deployments
 2. identify the previous safe deployment
-3. reassign the production alias to that deployment
+3. reassign the production alias to that deployment using the Vercel alias API
 
-This gives the pipeline an automatic fallback path when a risky deployment reaches production.
+This gives the pipeline an automated fallback path when a risky deployment reaches production, even after CI/CD has already completed.
 
 ## Typical flow
 
@@ -213,3 +227,15 @@ Add this only if your upload flow uses authenticated GitHub API access:
 Do not hardcode credentials, tokens, Slack webhooks, or API keys directly in the flow YAML files or in `docker-compose.yaml`.
 
 Store all secrets in Kestra Secrets or secure environment variables before pushing the project to GitHub.
+
+## References
+
+- [Kestra Documentation](https://kestra.io/docs)
+- [Kestra HTTP Request Plugin](https://kestra.io/plugins/core/http/io.kestra.plugin.core.http.request)
+- [Kestra Docker Compose Setup](https://kestra.io/docs/installation/docker-compose)
+- [Kestra KV Store](https://kestra.io/docs/concepts/kv-store)
+- [Vercel REST API](https://vercel.com/docs/rest-api)
+- [Vercel Deployments API](https://vercel.com/docs/rest-api/deployments/list-deployments)
+- [Vercel Alias API](https://vercel.com/docs/rest-api/aliases/assign-an-alias)
+- [Playwright Docker Docs](https://playwright.dev/docs/docker)
+- [Socket.dev CLI Docs](https://docs.socket.dev/docs/socket-cli)
